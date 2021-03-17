@@ -33,10 +33,6 @@ data class FinishedMatch(val uuid: UUID, val date: LocalDate)
 
 data class MatchResult(val homeTeamScore: Int, val awayTeamScore: Int)
 
-val bettingDbUrl = Key("betting-db.url", stringType)
-val bettingDbUsername = Key("betting-db.username", stringType)
-val bettingDbPassword = Key("betting-db.password", stringType)
-
 val apiFootballUrl = Key("api-football.url", stringType)
 val apiFootballRapidApiKey = Key("api-football.rapid-api-key", stringType)
 
@@ -51,8 +47,11 @@ fun main(args: Array<String>) {
         .withZoneSameInstant(ZoneOffset.UTC)
         .toLocalDateTime()
 
+    val databaseConnectionProperties = BettingDatabaseConnectionProperties(config)
+    val bettingDatabase = BettingDatabase(databaseConnectionProperties)
+
     println("Searching for matches that should have finished by now, started before $matchStartDateTimeThatShouldHaveFinishedByNow ...")
-    val matchesToSearchForResult = getAllNotFinishedMatchesByStartDateTimeFrom(matchStartDateTimeThatShouldHaveFinishedByNow)
+    val matchesToSearchForResult = bettingDatabase.getAllNotFinishedMatchesByStartDateTimeFrom(matchStartDateTimeThatShouldHaveFinishedByNow)
     if (matchesToSearchForResult.isEmpty()) {
         println("No matches found")
         return
@@ -76,32 +75,6 @@ fun main(args: Array<String>) {
 
         println("Result found ($matchResult) for match (externalId=$externalId, uuid=${match.uuid}), preparing finish request ...")
         finishMatch(match.uuid, matchResult)
-    }
-}
-
-private fun getAllNotFinishedMatchesByStartDateTimeFrom(from: LocalDateTime): Map<String, FinishedMatch> {
-    println("Connecting to betting_db ...")
-
-    Database.connect(
-        url = config[bettingDbUrl],
-        driver = "org.postgresql.Driver",
-        user = config[bettingDbUsername],
-        password = config[bettingDbPassword]
-    )
-
-    println("Connected!")
-
-    return transaction {
-        addLogger(StdOutSqlLogger)
-
-        return@transaction ExternalMatches.innerJoin(Matches)
-            .select {
-                Matches.startDateTime.less(from)
-                    .and(Matches.finished.eq(false))
-                    .and(ExternalMatches.origin.eq("api-football"))
-            }
-            .map { it[ExternalMatches.externalId] to FinishedMatch(it[Matches.uuid], it[Matches.startDateTime].toLocalDate()) }
-            .toMap()
     }
 }
 

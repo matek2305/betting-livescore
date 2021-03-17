@@ -1,5 +1,6 @@
 plugins {
     id("org.jetbrains.kotlin.jvm") version "1.3.72"
+    groovy
     application
 }
 
@@ -21,8 +22,10 @@ dependencies {
 
     runtimeOnly("org.postgresql:postgresql:42.2.2")
 
-    testImplementation("org.jetbrains.kotlin:kotlin-test")
-    testImplementation("org.jetbrains.kotlin:kotlin-test-junit")
+    testImplementation("org.codehaus.groovy:groovy-all:2.5.14")
+    testImplementation("org.spockframework:spock-core:1.3-groovy-2.5")
+    testImplementation("com.h2database:h2:1.3.176")
+    testImplementation("com.github.tomakehurst:wiremock-jre8:2.27.2")
 }
 
 application {
