@@ -2,7 +2,6 @@ package com.github.matek2305.betting.livescore
 
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.transaction
-import java.sql.DriverManager.getConnection
 import java.time.LocalDateTime
 
 class BettingDatabase(private val properties: BettingDatabaseConnectionProperties) {
@@ -10,7 +9,11 @@ class BettingDatabase(private val properties: BettingDatabaseConnectionPropertie
     fun getAllNotFinishedMatchesByStartDateTimeFrom(from: LocalDateTime): Map<String, FinishedMatch> {
         println("Connecting to betting_db at ${properties.getUrl()} ...")
 
-        Database.connect({ getConnection(properties.getUrl(), properties.getUsername(), properties.getPassword()) })
+        Database.connect(
+            url = properties.getUrl(),
+            user = properties.getUsername(),
+            password = properties.getPassword()
+        )
 
         println("Connected!")
 
