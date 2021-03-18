@@ -4,14 +4,10 @@ import com.natpryce.konfig.*
 import com.natpryce.konfig.Key
 import java.time.*
 import java.util.*
-import khttp.get
-import khttp.post
-import khttp.structures.authorization.BasicAuthorization
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.`java-time`.datetime
-import org.jetbrains.exposed.sql.transactions.transaction
 
-object Matches : Table("match_entity") {
+object Match : Table("match_entity") {
     val id = integer("id")
     val uuid = uuid("uuid")
     val startDateTime = datetime("start_date_time")
@@ -20,32 +16,26 @@ object Matches : Table("match_entity") {
     override val primaryKey = PrimaryKey(id)
 }
 
-object ExternalMatches : Table("external_match_entity") {
+object ExternalMatch : Table("external_match_entity") {
     val id = integer("id")
     val externalId = varchar("external_id", length = 255)
     val origin = varchar("origin", length = 255)
-    val matchEntityId = integer("match_entity_id").references(Matches.id)
+    val matchEntityId = integer("match_entity_id").references(Match.id)
 
-    override val primaryKey = PrimaryKey(Matches.id)
+    override val primaryKey = PrimaryKey(Match.id)
 }
 
-data class FinishedMatch(val uuid: UUID, val date: LocalDate)
+data class NotFinishedMatch(val uuid: UUID, val externalId: String, val date: LocalDate)
 
-data class MatchResult(val homeTeamScore: Int, val awayTeamScore: Int)
-
-val apiFootballUrl = Key("api-football.url", stringType)
-val apiFootballRapidApiKey = Key("api-football.rapid-api-key", stringType)
-
-val bettingRestApiUrl = Key("betting-rest-api.url", stringType)
-val bettingRestApiUsername = Key("betting-rest-api.username", stringType)
-val bettingRestApiPassword = Key("betting-rest-api.password", stringType)
+data class MatchResult(val externalId: String, val homeTeamScore: Int, val awayTeamScore: Int)
 
 val config = EnvironmentVariables() overriding ConfigurationProperties.fromResource("application.properties")
 
 fun main(args: Array<String>) {
-    val databaseConnectionProperties = BettingDatabaseConnectionProperties(config)
-    val bettingDatabase = BettingDatabase(databaseConnectionProperties)
+    val bettingDatabase = BettingDatabase(config)
+    val apiFootballClient = ApiFootballClient(config)
+    val bettingApiClient = BettingApiClient(config)
 
-    val finishMatches = FinishMatches(TimeProvider.Default(), bettingDatabase)
+    val finishMatches = FinishMatches(TimeProvider.Default(), bettingDatabase, apiFootballClient, bettingApiClient)
     finishMatches.finish()
 }

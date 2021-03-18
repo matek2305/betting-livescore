@@ -1,83 +1,58 @@
 package com.github.matek2305.betting.livescore
 
-import khttp.get
-import khttp.post
-import khttp.structures.authorization.BasicAuthorization
-import java.time.LocalDate
+import java.lang.IllegalArgumentException
 import java.time.ZoneOffset
 import java.util.*
 
-class FinishMatches(private val timeProvider: TimeProvider, private val bettingDatabase: BettingDatabase) {
+class FinishMatches(
+    private val timeProvider: TimeProvider,
+    private val bettingDatabase: BettingDatabase,
+    private val apiFootballClient: ApiFootballClient,
+    private val bettingApiClient: BettingApiClient) {
 
     fun finish() {
+        println("Searching for matches supposed to be finished by now ...")
+        val matches = getMatchesWhichSupposedToBeFinished()
+        if (matches.isEmpty()) {
+            println("No matches applicable for finish found")
+            return
+        }
+
+        println("Found matches: ${matches.size}, fetching results ...")
+        fetchResultsFor(matches).forEach { (matchUUID, result) ->
+            println("Match(uuid=$matchUUID) result found: ${result.homeTeamScore} - ${result.awayTeamScore}")
+            val responseStatus = bettingApiClient.finishMatch(matchUUID, result).statusCode
+            if (responseStatus == 201) {
+                println("Match(uuid=$matchUUID) successfully finished")
+            } else {
+                println("Match(uuid=$matchUUID) finish failed with status: $responseStatus")
+            }
+        }
+    }
+
+    private fun getMatchesWhichSupposedToBeFinished(): List<NotFinishedMatch> {
         val matchStartDateTimeThatShouldHaveFinishedByNow =
             timeProvider.getCurrentDateTime().minusMinutes(115)
                 .withZoneSameInstant(ZoneOffset.UTC)
                 .toLocalDateTime()
 
-        println("Searching for matches that should have finished by now, started before $matchStartDateTimeThatShouldHaveFinishedByNow ...")
-        val matchesToSearchForResult =
-            bettingDatabase.getAllNotFinishedMatchesByStartDateTimeFrom(matchStartDateTimeThatShouldHaveFinishedByNow)
-        if (matchesToSearchForResult.isEmpty()) {
-            println("No matches found")
-            return
-        }
-
-        println("Found matches: ${matchesToSearchForResult.size}")
-
-        val matchDates = matchesToSearchForResult.values.map { it.date }.toSet()
-        val resultForExternalId = fetchFinishedMatchesResultsByDates(matchDates)
-
-        println("Found ${resultForExternalId.size} finished matches")
-
-        matchesToSearchForResult.forEach { (externalId, match) ->
-
-            println("Search for match result (externalId=$externalId, uuid=${match.uuid}) ...")
-            val matchResult = resultForExternalId[externalId]
-            if (matchResult == null) {
-                println("Result not found for match (externalId=$externalId, uuid=${match.uuid})")
-                return@forEach
-            }
-
-            println("Result found ($matchResult) for match (externalId=$externalId, uuid=${match.uuid}), preparing finish request ...")
-            finishMatch(match.uuid, matchResult)
-        }
+        return bettingDatabase.getAllNotFinishedMatchesByStartDateTimeFrom(matchStartDateTimeThatShouldHaveFinishedByNow)
     }
 
-    private fun fetchFinishedMatchesResultsByDates(dates: Set<LocalDate>): Map<String, MatchResult> {
-        if (dates.size != 1) {
-            throw IllegalArgumentException("Date range not supported yet")
+    private fun fetchResultsFor(matches: List<NotFinishedMatch>): Map<UUID, MatchResult> {
+        val dates = matches.map { it.date }.toSet()
+        if (dates.size > 1) {
+            throw IllegalArgumentException("Date range not supported for fetching results")
         }
 
-        val response = get(
-            url = "${config[apiFootballUrl]}/fixtures",
-            params = mapOf("status" to "FT", "date" to dates.first().toString()),
-            headers = mapOf("x-rapidapi-key" to config[apiFootballRapidApiKey])
-        ).jsonObject.getJSONArray("response")
+        val resultsForExternalId = apiFootballClient.fetchFinishedMatchesResultsByDate(dates.first())
+            .map { it.externalId to it }
+            .toMap()
 
-        return (0 until response.length()).map {
-            val entry = response.getJSONObject(it)
-            val externalId = entry.getJSONObject("fixture").getInt("id").toString()
-            val goals = entry.getJSONObject("goals")
-            return@map externalId to MatchResult(goals.getInt("home"), goals.getInt("away"))
-        }.toMap()
-    }
+        return matches
+            .filter { resultsForExternalId.containsKey(it.externalId) }
+            .map { it.uuid to resultsForExternalId.getValue(it.externalId) }
+            .toMap()
 
-    private fun finishMatch(matchUUID: UUID, matchResult: MatchResult) {
-        val finishMatchResponseStatusCode = post(
-            url = "${config[bettingRestApiUrl]}/finished_matches",
-            auth = BasicAuthorization(config[bettingRestApiUsername], config[bettingRestApiPassword]),
-            json = mapOf(
-                "matchId" to matchUUID.toString(),
-                "homeTeamScore" to matchResult.homeTeamScore,
-                "awayTeamScore" to matchResult.awayTeamScore
-            )
-        ).statusCode
-
-        if (finishMatchResponseStatusCode == 201) {
-            println("Match (uuid=$matchUUID) successfully finished with result: $matchResult")
-        } else {
-            println("Match (uuid=$matchUUID) finish failed with status: $finishMatchResponseStatusCode")
-        }
     }
 }

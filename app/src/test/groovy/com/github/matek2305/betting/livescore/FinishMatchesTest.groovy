@@ -5,7 +5,6 @@ import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder
 import com.github.tomakehurst.wiremock.junit.WireMockRule
 import org.h2.tools.RunScript
 import org.junit.Rule
-import spock.lang.Shared
 import spock.lang.Specification
 import spock.lang.Subject
 
@@ -20,25 +19,25 @@ class FinishMatchesTest extends Specification {
     @Rule
     WireMockRule wireMockRule = new WireMockRule(8889)
     
-    @Shared
-    def connectionProperties = new BettingDatabaseConnectionProperties(config)
-    def bettingDatabase = new BettingDatabase(connectionProperties)
+    def bettingDatabase = new BettingDatabase(config)
+    def apiFootballClient = new ApiFootballClient(config)
+    def bettingApiClient = new BettingApiClient(config)
     def timeProviderMock = Mock(TimeProvider)
     
     @Subject
-    def finishMatches = new FinishMatches(timeProviderMock, bettingDatabase)
+    def finishMatches = new FinishMatches(timeProviderMock, bettingDatabase, apiFootballClient, bettingApiClient)
     
     def setupSpec() {
         RunScript.execute(
                 DriverManager.getConnection(
-                        connectionProperties.getUrl(),
-                        connectionProperties.getUsername(),
-                        connectionProperties.getPassword()
+                        config.get(BettingDatabase.url) as String,
+                        config.get(BettingDatabase.username) as String,
+                        config.get(BettingDatabase.password) as String
                 ),
                 new FileReader('src/test/resources/data.sql')
         )
     }
-    
+
     def setup() {
         wireMockRule.stubFor(
                 post(urlPathEqualTo('/betting-rest-api/finished_matches'))
