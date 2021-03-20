@@ -29,5 +29,6 @@ dependencies {
 }
 
 application {
-    mainClass.set("com.github.matek2305.betting.livescore.AppKt")
+    mainClass.set("com.github.matek2305.betting.livescore.LivescoreAppKt")
+    applicationName = "betting-livescore"
 }
