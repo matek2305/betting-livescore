@@ -3,6 +3,7 @@ package com.github.matek2305.betting.livescore
 import com.github.tomakehurst.wiremock.client.BasicCredentials
 import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder
 import com.github.tomakehurst.wiremock.junit.WireMockRule
+import com.github.tomakehurst.wiremock.matching.RequestPatternBuilder
 import org.h2.tools.RunScript
 import org.junit.Rule
 import spock.lang.Specification
@@ -47,7 +48,7 @@ class FinishMatchesTest extends Specification {
     
     def "should use betting-rest-api to finish match with result from api-football"() {
         given:
-            timeProviderMock.getCurrentDateTime() >> ZonedDateTime.parse('2021-03-16T21:56Z')
+            timeProviderMock.getCurrentDateTime() >> ZonedDateTime.parse('2021-03-16T22:56+01:00')
             
         and:
             wireMockRule.stubFor(
@@ -63,34 +64,59 @@ class FinishMatchesTest extends Specification {
                             ))
             )
         
-        expect:
+        when:
             finishMatches.finish()
         
-        and:
-            wireMockRule.verify(
-                    postRequestedFor(urlPathEqualTo('/betting-rest-api/finished_matches'))
-                            .withBasicAuth(new BasicCredentials('betting', 'betting'))
-                            .withRequestBody(equalToJson("""
-                            {
-                              "matchId": "14713275-41a6-4dc1-b545-ecc7f2783fb1",
-                              "homeTeamScore": 3,
-                              "awayTeamScore": 1
-                            }
-                            """))
-            )
+        then:
+            wireMockRule.verify(0, getRequestedFor(urlPathMatching('/api-football')))
         
         and:
+            wireMockRule.verify(finishMatchRequest('14713275-41a6-4dc1-b545-ecc7f2783fb1', 3, 1))
+    }
+    
+    def "should fetch results from api-football using dates range"() {
+        given:
+            timeProviderMock.getCurrentDateTime() >> ZonedDateTime.parse('2021-03-20T06:37+01:00')
+    
+        and:
+            wireMockRule.stubFor(
+                    get(urlPathEqualTo('/api-football/fixtures'))
+                        
+                            .withQueryParam('status', equalTo('FT'))
+                            .withQueryParam('from', equalTo('2021-03-16'))
+                            .withQueryParam('to', equalTo('2021-03-18'))
+                            .withHeader('x-rapidapi-key', equalTo('rapid-api-key'))
+                        
+                            .willReturn(afResponse(
+                                    afResponseEntry(202, 1, 1),
+                                    afResponseEntry(102, 3, 1),
+                                    afResponseEntry(103, 2, 1),
+                                    afResponseEntry(104, 2, 0),
+                                    afResponseEntry(105, 0, 1)
+                            ))
+            )
+    
+        when:
+            finishMatches.finish()
+        
+        then:
             wireMockRule.verify(0, getRequestedFor(urlPathMatching('/api-football')))
+    
+        and:
+            wireMockRule.verify(finishMatchRequest('14713275-41a6-4dc1-b545-ecc7f2783fb1', 3, 1))
+            wireMockRule.verify(finishMatchRequest('14713275-41a6-4dc1-b545-ecc7f2783fb2', 2, 1))
+            wireMockRule.verify(finishMatchRequest('14713275-41a6-4dc1-b545-ecc7f2783fb3', 2, 0))
+            wireMockRule.verify(finishMatchRequest('14713275-41a6-4dc1-b545-ecc7f2783fb4', 0, 1))
     }
     
     def "should not call football-api when there are no matches applicable for finish found"() {
         given:
-            timeProviderMock.getCurrentDateTime() >> ZonedDateTime.parse('2021-03-16T21:54Z')
+            timeProviderMock.getCurrentDateTime() >> ZonedDateTime.parse('2021-03-16T22:54+01:00')
         
-        expect:
+        when:
             finishMatches.finish()
         
-        and:
+        then:
             wireMockRule.verify(0, getRequestedFor(urlPathMatching('/api-football')))
     }
     
@@ -111,10 +137,10 @@ class FinishMatchesTest extends Specification {
                             ))
             )
     
-        expect:
+        when:
             finishMatches.finish()
     
-        and:
+        then:
             wireMockRule.verify(0, postRequestedFor(urlPathEqualTo('/betting-rest-api/finished_matches')))
     }
     
@@ -138,6 +164,18 @@ class FinishMatchesTest extends Specification {
         }.join(',')
         
         return okJson(""" { "response": [${responseArrayContent}] }""")
+    }
+    
+    private static RequestPatternBuilder finishMatchRequest(String uuid, int homeTeamScore, int awayTeamScore) {
+        return postRequestedFor(urlPathEqualTo('/betting-rest-api/finished_matches'))
+                .withBasicAuth(new BasicCredentials('betting', 'betting'))
+                .withRequestBody(equalToJson("""
+                            {
+                              "matchId": "$uuid",
+                              "homeTeamScore": $homeTeamScore,
+                              "awayTeamScore": $awayTeamScore
+                            }
+                            """))
     }
     
     static class ApiFootballResponseEntry {

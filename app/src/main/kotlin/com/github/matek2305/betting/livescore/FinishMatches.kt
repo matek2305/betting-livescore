@@ -23,7 +23,7 @@ class FinishMatches(
             println("Match(uuid=$matchUUID) result found: ${result.homeTeamScore} - ${result.awayTeamScore}")
             val responseStatus = bettingApiClient.finishMatch(matchUUID, result).statusCode
             if (responseStatus == 201) {
-                println("Match(uuid=$matchUUID) successfully finished")
+                println("Match(uuid=$matchUUID) successfully finished with found result")
             } else {
                 println("Match(uuid=$matchUUID) finish failed with status: $responseStatus")
             }
@@ -32,7 +32,7 @@ class FinishMatches(
 
     private fun getMatchesWhichSupposedToBeFinished(): List<NotFinishedMatch> {
         val matchStartDateTimeThatShouldHaveFinishedByNow =
-            timeProvider.getCurrentDateTime().minusMinutes(115)
+            timeProvider.getCurrentDateTime().minusMinutes(TIME_IN_MINUTES_AFTER_WHICH_MATCH_SHOULD_FINISH)
                 .withZoneSameInstant(ZoneOffset.UTC)
                 .toLocalDateTime()
 
@@ -41,18 +41,23 @@ class FinishMatches(
 
     private fun fetchResultsFor(matches: List<NotFinishedMatch>): Map<UUID, MatchResult> {
         val dates = matches.map { it.date }.toSet()
-        if (dates.size > 1) {
-            throw IllegalArgumentException("Date range not supported for fetching results")
+
+        val results = if (dates.size > 1) {
+            apiFootballClient.fetchFinishedMatchesResultsByDates(dates.min()!!, dates.max()!!)
+        } else {
+            apiFootballClient.fetchFinishedMatchesResultsByDate(dates.first())
         }
 
-        val resultsForExternalId = apiFootballClient.fetchFinishedMatchesResultsByDate(dates.first())
-            .map { it.externalId to it }
-            .toMap()
+        val resultsForExternalId = results.map { it.externalId to it }.toMap()
 
         return matches
             .filter { resultsForExternalId.containsKey(it.externalId) }
             .map { it.uuid to resultsForExternalId.getValue(it.externalId) }
             .toMap()
 
+    }
+
+    companion object {
+        private const val TIME_IN_MINUTES_AFTER_WHICH_MATCH_SHOULD_FINISH = 115L
     }
 }
