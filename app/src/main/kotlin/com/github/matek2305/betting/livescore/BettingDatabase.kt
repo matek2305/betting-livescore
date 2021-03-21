@@ -15,8 +15,6 @@ class BettingDatabase(private val config: Configuration) {
         println("Connected!")
 
         return transaction {
-            addLogger(StdOutSqlLogger)
-
             return@transaction ExternalMatch.innerJoin(Match)
                 .select {
                     Match.startDateTime.less(from)
